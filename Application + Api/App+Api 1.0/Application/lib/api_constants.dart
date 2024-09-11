@@ -1,6 +1,6 @@
 // api_constants.dart
 
-const String baseUrl = 'http://192.168.1.171:4000'; // URL ของเซิร์ฟเวอร์ API
+const String baseUrl = 'http://192.168.120.104:4000'; // URL ของเซิร์ฟเวอร์ API
 
 // ฟังก์ชันสำหรับสร้าง URL เพื่อใช้งาน endpoint การล็อกอิน
 String getLoginEndpoint() {
