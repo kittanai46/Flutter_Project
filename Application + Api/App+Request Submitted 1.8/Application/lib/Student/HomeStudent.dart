@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:ClassTracking/Student/Sbox/SBox1.dart';
-import 'package:ClassTracking/Student/Sbox/SBox3/Choose.dart';
 import 'package:ClassTracking/Student/Sbox/Sbox2.dart';
+import 'package:ClassTracking/Student/Sbox/Sbox3/Choose.dart';
 import 'package:ClassTracking/Student/Sbox/Sbox4/Sbox4.dart';
 import 'package:ClassTracking/api_constants.dart';
 import 'package:flutter/material.dart';
@@ -561,8 +561,9 @@ class _HomeStudentState extends State<HomeStudent> {
                     () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (context) =>
-                              Choose(studentId: widget.idNumber)),
+                        builder: (context) =>
+                            Choose(studentId: widget.idNumber),
+                      ),
                     ),
                     titlePadding: const EdgeInsets.only(left: 40, top: 5),
                     descriptionPadding: const EdgeInsets.only(left: 40, top: 5),

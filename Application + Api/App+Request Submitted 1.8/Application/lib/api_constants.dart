@@ -73,6 +73,24 @@ class APIConstants {
   // Attendance endpoints
   static String getLogAttendanceEndpoint() => '/log_attendance';
 
+  // Leave system endpoints
+  static String getLeaveTypesEndpoint() => '/api/leave-types';
+  static String getLeaveRequestEndpoint() => '/api/leave-request';
+  static String getLeaveHistoryEndpoint(String studentId) =>
+      '/api/leave-history/$studentId';
+  static String getPendingLeaveRequestsEndpoint(String teacherId) =>
+      '/api/pending-leave-requests/$teacherId';
+  static String getApproveLeaveRequestEndpoint(String leaveRequestId) =>
+      '/api/approve-leave-request/$leaveRequestId';
+
+  // Course endpoints
+  static String getStudentCoursesEndpoint(String studentId) =>
+      '/api/student_courses/$studentId';
+
+  // Message endpoints
+  static String getCourseMessagesEndpoint() => '/api/course_messages';
+  static String getAllMessagesEndpoint() => '/api/messages';
+
   // User data methods
   static Future<Map<String, dynamic>> getUserData(String userId) async {
     try {
@@ -130,47 +148,22 @@ class APIConstants {
   }
 
   // Course methods
-  static Future<Map<String, String>> getCoursesNames(
-      List<String> courseCodes) async {
-    try {
-      final response = await makeRequest(
-        '/get-course-names',
-        method: 'POST',
-        body: {'course_codes': courseCodes},
-      );
-
-      if (response.statusCode == 200) {
-        return Map<String, String>.from(jsonDecode(response.body));
-      } else {
-        throw Exception('Failed to load course names: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Error getting course names: $e');
-      rethrow;
-    }
-  }
-
   static Future<List<Map<String, dynamic>>> getStudentCourses(
       String studentId) async {
     try {
-      final response = await makeRequest('/api/student_courses/$studentId');
-      print('API Response for student courses: ${response.body}');
+      final response = await makeRequest(getStudentCoursesEndpoint(studentId));
       if (response.statusCode == 200) {
-        if (response.body.startsWith('<!DOCTYPE html>')) {
-          throw Exception('Received HTML instead of JSON. Check API endpoint.');
-        }
         final List<dynamic> coursesJson = jsonDecode(response.body);
-        final courses = coursesJson
+        return coursesJson
             .map((course) => {
                   'course_id': course['course_id']?.toString() ?? '',
                   'course_code': course['course_code'] ?? '',
                   'course_name': course['course_name'] ?? '',
+                  'section': course['section']?.toString() ?? '',
                   'name':
-                      "${course['course_code'] ?? ''} - ${course['course_name'] ?? ''}"
+                      "${course['course_code']}[${course['section']}] - ${course['course_name']}"
                 })
             .toList();
-        print('Processed courses: $courses');
-        return courses;
       } else {
         throw Exception('Failed to load courses: ${response.statusCode}');
       }
@@ -183,7 +176,7 @@ class APIConstants {
   // Leave system methods
   static Future<List<Map<String, dynamic>>> getLeaveTypes() async {
     try {
-      final response = await makeRequest('/api/leave-types');
+      final response = await makeRequest(getLeaveTypesEndpoint());
       if (response.statusCode == 200) {
         final List<dynamic> leaveTypesJson = jsonDecode(response.body);
         return leaveTypesJson
@@ -199,26 +192,24 @@ class APIConstants {
   }
 
   static Future<Map<String, dynamic>> submitLeaveRequest(
-      Map<String, dynamic> leaveData) async {
+      Map<String, dynamic> leaveData,
+      List<http.MultipartFile> attachments) async {
     try {
-      print('Submitting leave request with data: $leaveData');
-      final response = await makeRequest(
-        '/api/leave-request',
-        method: 'POST',
-        body: leaveData,
-      );
-      print('Leave request response: ${response.body}');
+      var request = http.MultipartRequest(
+          'POST', Uri.parse('$baseURL${getLeaveRequestEndpoint()}'));
+
+      request.fields.addAll(
+          leaveData.map((key, value) => MapEntry(key, value.toString())));
+
+      for (var file in attachments) {
+        request.files.add(file);
+      }
+
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200) {
-        if (response.body.startsWith('<!DOCTYPE html>')) {
-          throw Exception('Received HTML instead of JSON. Check API endpoint.');
-        }
-        final responseData = jsonDecode(response.body);
-        if (responseData is Map<String, dynamic>) {
-          return responseData;
-        } else {
-          throw Exception('Invalid response format');
-        }
+        return jsonDecode(response.body);
       } else {
         throw Exception(
             'Failed to submit leave request: ${response.statusCode}');
@@ -229,16 +220,10 @@ class APIConstants {
     }
   }
 
-  static Future<String> uploadFile(String filePath, String fileType) async {
-    // TODO: Implement actual file upload logic
-    // This is a placeholder implementation
-    return 'https://example.com/uploads/$fileType/${DateTime.now().millisecondsSinceEpoch}';
-  }
-
   static Future<List<Map<String, dynamic>>> getLeaveHistory(
       String studentId) async {
     try {
-      final response = await makeRequest('/api/leave-history/$studentId');
+      final response = await makeRequest(getLeaveHistoryEndpoint(studentId));
       if (response.statusCode == 200) {
         final List<dynamic> historyJson = jsonDecode(response.body);
         return historyJson.map((item) => item as Map<String, dynamic>).toList();
@@ -255,14 +240,15 @@ class APIConstants {
       String teacherId) async {
     try {
       final response =
-          await makeRequest('/api/pending-leave-requests/$teacherId');
+          await makeRequest(getPendingLeaveRequestsEndpoint(teacherId));
       if (response.statusCode == 200) {
         final List<dynamic> requestsJson = jsonDecode(response.body);
         return requestsJson
             .map((request) => request as Map<String, dynamic>)
             .toList();
       } else {
-        throw Exception('Failed to load pending leave requests');
+        throw Exception(
+            'Failed to load pending leave requests: ${response.statusCode}');
       }
     } catch (e) {
       print('Error in getPendingLeaveRequests: $e');
@@ -273,17 +259,17 @@ class APIConstants {
   static Future<Map<String, dynamic>> approveLeaveRequest({
     required String leaveRequestId,
     required String teacherId,
-    required bool isApproved,
+    required String status,
     String? comment,
   }) async {
     try {
       final response = await makeRequest(
-        '/api/approve-leave-request/$leaveRequestId',
+        getApproveLeaveRequestEndpoint(leaveRequestId),
         method: 'POST',
         body: {
-          'teacher_id': teacherId,
-          'is_approved': isApproved,
+          'status': status,
           'comment': comment,
+          'approver_id': teacherId,
         },
       );
       return jsonDecode(response.body);
@@ -293,11 +279,43 @@ class APIConstants {
     }
   }
 
-  // Message endpoints
-  static String getStudentCoursesEndpoint(String studentId) =>
-      '/api/student_courses/$studentId';
-  static String getCourseMessagesEndpoint() => '/api/course_messages';
-  static String getAllMessagesEndpoint() => '/api/messages';
+  // Message methods
+  static Future<List<Map<String, dynamic>>> getCourseMessages(
+      List<String> courseCodes) async {
+    try {
+      final response = await makeRequest(
+        getCourseMessagesEndpoint(),
+        method: 'POST',
+        body: {'courses': courseCodes},
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> messagesJson = jsonDecode(response.body);
+        return messagesJson
+            .map((message) => message as Map<String, dynamic>)
+            .toList();
+      } else {
+        throw Exception('Failed to load course messages');
+      }
+    } catch (e) {
+      print('Error in getCourseMessages: $e');
+      rethrow;
+    }
+  }
 
-  // Additional helper methods can be added here as needed
+  static Future<List<Map<String, dynamic>>> getAllMessages() async {
+    try {
+      final response = await makeRequest(getAllMessagesEndpoint());
+      if (response.statusCode == 200) {
+        final List<dynamic> messagesJson = jsonDecode(response.body);
+        return messagesJson
+            .map((message) => message as Map<String, dynamic>)
+            .toList();
+      } else {
+        throw Exception('Failed to load all messages');
+      }
+    } catch (e) {
+      print('Error in getAllMessages: $e');
+      rethrow;
+    }
+  }
 }

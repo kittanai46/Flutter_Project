@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:ClassTracking/api_constants.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 class SBox3 extends StatefulWidget {
@@ -124,31 +125,31 @@ class _SBox3State extends State<SBox3> {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
       try {
-        String? leaveDocumentUrl;
-        String? medicalCertificateUrl;
+        List<http.MultipartFile> attachments = [];
 
         if (_leaveDocument != null) {
-          leaveDocumentUrl = await APIConstants.uploadFile(
-              _leaveDocument!.path, 'leave_document');
+          attachments.add(await http.MultipartFile.fromPath(
+              'leave_document', _leaveDocument!.path));
         }
+
         if (_medicalCertificate != null) {
-          medicalCertificateUrl = await APIConstants.uploadFile(
-              _medicalCertificate!.path, 'medical_certificate');
+          attachments.add(await http.MultipartFile.fromPath(
+              'medical_certificate', _medicalCertificate!.path));
         }
 
         final leaveData = {
           'student_id': widget.studentId,
           'course_id': _selectedCourse,
           'leave_type_id': _selectedLeaveType,
+          'reason': _reason, // เพิ่มเหตุผลการลา
           'start_date': DateFormat('yyyy-MM-dd').format(_startDate!),
           'end_date': DateFormat('yyyy-MM-dd').format(_endDate!),
-          'reason': _reason,
-          'leave_document_url': leaveDocumentUrl,
-          'medical_certificate_url': medicalCertificateUrl,
+          'status': 'รออนุมัติ', // เพิ่มสถานะเริ่มต้น
         };
 
         print('Submitting leave request with data: $leaveData');
-        final result = await APIConstants.submitLeaveRequest(leaveData);
+        final result =
+            await APIConstants.submitLeaveRequest(leaveData, attachments);
         print('Leave request result: $result');
 
         if (result['success'] == true) {

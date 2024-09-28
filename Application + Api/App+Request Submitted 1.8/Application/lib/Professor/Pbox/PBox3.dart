@@ -30,37 +30,79 @@ class _PBox3State extends State<PBox3> {
         _pendingLeaveRequests = requests;
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เกิดข้อผิดพลาดในการโหลดข้อมูล: $e')),
-      );
+      _showErrorSnackBar('เกิดข้อผิดพลาดในการโหลดข้อมูล: $e');
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
+  Future<void> _confirmApproval(String leaveRequestId, bool isApproved) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(isApproved ? 'ยืนยันการอนุมัติ' : 'ยืนยันการปฏิเสธ'),
+          content: Text(
+              'คุณแน่ใจหรือไม่ที่จะ${isApproved ? 'อนุมัติ' : 'ปฏิเสธ'}ใบลานี้?'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('ยกเลิก'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              child: Text('ยืนยัน'),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _approveLeaveRequest(leaveRequestId, isApproved);
+    }
+  }
+
   Future<void> _approveLeaveRequest(
       String leaveRequestId, bool isApproved) async {
+    String? comment = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        final commentController = TextEditingController();
+        return AlertDialog(
+          title: Text('เพิ่มความเห็น'),
+          content: TextField(
+            controller: commentController,
+            decoration: InputDecoration(hintText: "กรอกความเห็น (ถ้ามี)"),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('ยืนยัน'),
+              onPressed: () =>
+                  Navigator.of(context).pop(commentController.text),
+            ),
+          ],
+        );
+      },
+    );
+
     setState(() => _isLoading = true);
     try {
       final result = await APIConstants.approveLeaveRequest(
         leaveRequestId: leaveRequestId,
         teacherId: widget.teacherId,
-        isApproved: isApproved,
+        status: isApproved ? 'อนุมัติ' : 'ไม่อนุมัติ',
+        comment: comment,
       );
-      if (result['success']) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text(isApproved ? 'อนุมัติใบลาสำเร็จ' : 'ปฏิเสธใบลาสำเร็จ')),
-        );
+      if (result['success'] == true) {
+        _showSuccessSnackBar(
+            isApproved ? 'อนุมัติใบลาสำเร็จ' : 'ปฏิเสธใบลาสำเร็จ');
         _fetchPendingLeaveRequests(); // Refresh the list
       } else {
-        throw Exception(result['error']);
+        throw Exception(result['error'] ?? 'Unknown error occurred');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-      );
+      _showErrorSnackBar('เกิดข้อผิดพลาด: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -77,7 +119,8 @@ class _PBox3State extends State<PBox3> {
               children: <Widget>[
                 Text('นิสิต: ${leaveRequest['student_name']}'),
                 Text('รหัสนิสิต: ${leaveRequest['student_id']}'),
-                Text('วิชา: ${leaveRequest['course_name']}'),
+                Text(
+                    'วิชา: ${leaveRequest['course_name']} (${leaveRequest['course_code']})'),
                 Text('ประเภทการลา: ${leaveRequest['leave_type']}'),
                 Text(
                     'วันที่เริ่มลา: ${DateFormat('dd/MM/yyyy').format(DateTime.parse(leaveRequest['start_date']))}'),
@@ -87,16 +130,14 @@ class _PBox3State extends State<PBox3> {
                 if (leaveRequest['leave_document_url'] != null)
                   TextButton(
                     child: Text('ดูเอกสารใบลา'),
-                    onPressed: () {
-                      // TODO: Implement document viewing logic
-                    },
+                    onPressed: () =>
+                        _viewDocument(leaveRequest['leave_document_url']),
                   ),
                 if (leaveRequest['medical_certificate_url'] != null)
                   TextButton(
                     child: Text('ดูใบรับรองแพทย์'),
-                    onPressed: () {
-                      // TODO: Implement document viewing logic
-                    },
+                    onPressed: () =>
+                        _viewDocument(leaveRequest['medical_certificate_url']),
                   ),
               ],
             ),
@@ -104,13 +145,29 @@ class _PBox3State extends State<PBox3> {
           actions: <Widget>[
             TextButton(
               child: Text('ปิด'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(context).pop(),
             ),
           ],
         );
       },
+    );
+  }
+
+  void _viewDocument(String documentUrl) {
+    // TODO: Implement document viewing logic
+    print('Viewing document: $documentUrl');
+    // This could open a web view or download and open the document
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
   }
 
@@ -119,7 +176,7 @@ class _PBox3State extends State<PBox3> {
     return Scaffold(
       body: Stack(
         children: [
-          // ภาพพื้นหลัง
+          // Background image
           Positioned(
             top: -10,
             left: 0,
@@ -132,7 +189,7 @@ class _PBox3State extends State<PBox3> {
               ),
             ),
           ),
-          // ปุ่มย้อนกลับ
+          // Back button
           Positioned(
             top: 40,
             left: 20,
@@ -145,7 +202,7 @@ class _PBox3State extends State<PBox3> {
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          // ไอคอนด้านขวา
+          // Right icon
           Positioned(
             top: 80,
             right: 20,
@@ -155,7 +212,7 @@ class _PBox3State extends State<PBox3> {
               height: 50,
             ),
           ),
-          // ข้อความกลางหน้าจอ
+          // Screen title
           Positioned(
             top: 80,
             left: 0,
@@ -173,7 +230,7 @@ class _PBox3State extends State<PBox3> {
               ),
             ),
           ),
-          // รายการใบลาที่รอการอนุมัติ
+          // Pending leave requests list
           Positioned(
             top: 140,
             left: 0,
@@ -193,21 +250,28 @@ class _PBox3State extends State<PBox3> {
                             child: ListTile(
                               title: Text(
                                   '${leaveRequest['student_name']} - ${leaveRequest['course_name']}'),
-                              subtitle: Text(
-                                  'วันที่ลา: ${DateFormat('dd/MM/yyyy').format(DateTime.parse(leaveRequest['start_date']))}'),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                      'วันที่ลา: ${DateFormat('dd/MM/yyyy').format(DateTime.parse(leaveRequest['start_date']))} - ${DateFormat('dd/MM/yyyy').format(DateTime.parse(leaveRequest['end_date']))}'),
+                                  Text(
+                                      'ประเภทการลา: ${leaveRequest['leave_type']}'),
+                                ],
+                              ),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconButton(
                                     icon:
                                         Icon(Icons.check, color: Colors.green),
-                                    onPressed: () => _approveLeaveRequest(
-                                        leaveRequest['id'], true),
+                                    onPressed: () => _confirmApproval(
+                                        leaveRequest['id'].toString(), true),
                                   ),
                                   IconButton(
                                     icon: Icon(Icons.close, color: Colors.red),
-                                    onPressed: () => _approveLeaveRequest(
-                                        leaveRequest['id'], false),
+                                    onPressed: () => _confirmApproval(
+                                        leaveRequest['id'].toString(), false),
                                   ),
                                 ],
                               ),

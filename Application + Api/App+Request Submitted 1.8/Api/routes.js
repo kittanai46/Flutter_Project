@@ -11,6 +11,7 @@ const multer = require('multer');
 const upload = multer();
 
 
+
 // ฟังก์ชันสำหรับแปลงวันที่เป็นรูปแบบ YYYY-MM-DD
 function formatDateForMySQL(dateString) {
     const date = new Date(dateString);
@@ -1194,60 +1195,183 @@ router.get('/api/student_messages/:studentId', async (req, res) => {
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
+// ตั้งค่า multer สำหรับการอัปโหลดไฟล์
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      const uploadPath = path.join(__dirname, 'uploads');
+      fs.promises.mkdir(uploadPath, { recursive: true })
+        .then(() => cb(null, uploadPath))
+        .catch(err => cb(err));
+    },
+    filename: function (req, file, cb) {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+  }); 
 //ส่งใบลา
-  router.post('/api/leave-request', ifNotLoggedIn, async (req, res) => {
-    const { student_id, course_id, leave_type_id, reason, start_date, end_date, leave_document_url, medical_certificate_url } = req.body;
+// API สำหรับส่งคำขอลา
+router.post('/api/leave-request', upload.fields([
+    { name: 'leave_document', maxCount: 1 },
+    { name: 'medical_certificate', maxCount: 1 }
+  ]), async (req, res) => {
+    const { 
+      student_id, 
+      course_id,  // ใช้ course_id แทน course_code และ section
+      leave_type_id, 
+      reason, 
+      start_date, 
+      end_date, 
+      status = 'รออนุมัติ' // ค่าเริ่มต้นสำหรับสถานะ
+    } = req.body;
+  
+    let leave_document_url = null;
+    let medical_certificate_url = null;
+  
+    if (req.files) {
+      if (req.files['leave_document']) {
+        leave_document_url = '/uploads/' + req.files['leave_document'][0].filename;
+      }
+      if (req.files['medical_certificate']) {
+        medical_certificate_url = '/uploads/' + req.files['medical_certificate'][0].filename;
+      }
+    }
+  
+    const connection = await dbConnection.getConnection();
     try {
-      const [result] = await dbConnection.execute(
-        'INSERT INTO leave_requests (student_id, course_id, leave_type_id, reason, start_date, end_date, leave_document_url, medical_certificate_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [student_id, course_id, leave_type_id, reason, start_date, end_date, leave_document_url, medical_certificate_url]
-      );
-      res.json({ success: true, leave_request_id: result.insertId });
+      await connection.beginTransaction();
+  
+      // บันทึกข้อมูลใบลา
+      const [result] = await connection.execute(`
+        INSERT INTO leave_requests 
+        (student_id, course_id, leave_type_id, reason, start_date, end_date, status, leave_document_url, medical_certificate_url) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [student_id, course_id, leave_type_id, reason, start_date, end_date, status, leave_document_url, medical_certificate_url]);
+  
+      const leaveRequestId = result.insertId;
+  
+      // บันทึกข้อมูลไฟล์แนบ (ถ้ามี)
+      if (leave_document_url) {
+        await connection.execute(`
+          INSERT INTO leave_attachments (leave_request_id, file_type, file_url)
+          VALUES (?, 'ใบลา', ?)
+        `, [leaveRequestId, leave_document_url]);
+      }
+  
+      if (medical_certificate_url) {
+        await connection.execute(`
+          INSERT INTO leave_attachments (leave_request_id, file_type, file_url)
+          VALUES (?, 'ใบรับรองแพทย์', ?)
+        `, [leaveRequestId, medical_certificate_url]);
+      }
+  
+      await connection.commit();
+      res.json({ 
+        success: true, 
+        message: 'Leave request submitted successfully', 
+        leave_request_id: leaveRequestId 
+      });
     } catch (error) {
+      await connection.rollback();
       console.error('Error submitting leave request:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    } finally {
+      connection.release();
     }
   });
+
 //ประวัติลา
-  router.get('/api/leave-history/:studentId', ifNotLoggedIn, async (req, res) => {
-    const { studentId } = req.params;
+router.post('/api/leave-request', upload.fields([
+    { name: 'leave_document', maxCount: 1 },
+    { name: 'medical_certificate', maxCount: 1 }
+  ]), async (req, res) => {
+    const { 
+      student_id, 
+      course_id, 
+      leave_type_id, 
+      reason,
+      start_date, 
+      end_date,
+      status = 'รออนุมัติ'
+    } = req.body;
+  
+    let leave_document_url = null;
+    let medical_certificate_url = null;
+  
+    if (req.files) {
+      if (req.files['leave_document']) {
+        leave_document_url = '/uploads/' + req.files['leave_document'][0].filename;
+      }
+      if (req.files['medical_certificate']) {
+        medical_certificate_url = '/uploads/' + req.files['medical_certificate'][0].filename;
+      }
+    }
+  
+    // ตรวจสอบและแทนที่ค่า undefined ด้วย null
+    const safeValues = [
+        student_id || null,
+        course_id || null,
+        null,  // teacher_id เป็น null
+        leave_type_id || null,
+        reason || null,
+        start_date || null,
+        end_date || null,
+        status,
+        leave_document_url,
+        medical_certificate_url
+      ];
+    
+      try {
+        const [result] = await dbConnection.execute(`
+          INSERT INTO leave_requests 
+          (student_id, course_id, teacher_id, leave_type_id, reason, start_date, end_date, status, leave_document_url, medical_certificate_url) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, safeValues);
+    
+        res.json({ success: true, leave_request_id: result.insertId });
+      } catch (error) {
+        console.error('Error submitting leave request:', error);
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+  router.post('/api/leave-attachment', async (req, res) => {
+    const { leave_request_id, file_type, file_url } = req.body;
     try {
-      const [leaveHistory] = await dbConnection.execute(`
-        SELECT lr.*, lt.type_name, c.course_name
-        FROM leave_requests lr
-        JOIN leave_types lt ON lr.leave_type_id = lt.id
-        JOIN courses c ON lr.course_id = c.course_id
-        WHERE lr.student_id = ?
-        ORDER BY lr.created_at DESC
-      `, [studentId]);
-      res.json(leaveHistory);
+      await dbConnection.execute(`
+        INSERT INTO leave_attachments 
+        (leave_request_id, file_type, file_url) 
+        VALUES (?, ?, ?)
+      `, [leave_request_id, file_type, file_url]);
+  
+      res.json({ success: true });
     } catch (error) {
-      console.error('Error fetching leave history:', error);
-      res.status(500).json({ error: 'Internal Server Error' });
+      console.error('Error saving leave attachment:', error);
+      res.status(500).json({ success: false, error: error.message });
     }
   });
 
 //----------------------------------------------ส่วนอาจารย์-------------------------------------------
-//การอนุมัติใบลา
-router.get('/api/pending-leave-requests/:teacherId', ifNotLoggedIn, async (req, res) => {
+// API สำหรับดึงข้อมูลใบลาที่รออนุมัติสำหรับอาจารย์
+router.get('/api/pending-leave-requests/:teacherId', async (req, res) => {
     const { teacherId } = req.params;
-    if (!teacherId) {
-      return res.status(400).json({ error: 'Teacher ID is required' });
-    }
-    
     try {
+      console.log('Fetching pending leave requests for teacher ID:', teacherId);
       const [pendingRequests] = await dbConnection.execute(`
-        SELECT lr.*, lt.type_name, c.course_name, u.first_name, u.last_name
+        SELECT lr.*, lt.type_name AS leave_type, c.course_name, c.course_code, c.section, 
+               u.first_name, u.last_name,
+               CONCAT(u.first_name, ' ', u.last_name) AS student_name,
+               la_leave.file_url AS leave_document_url, 
+               la_medical.file_url AS medical_certificate_url
         FROM leave_requests lr
         JOIN leave_types lt ON lr.leave_type_id = lt.id
         JOIN courses c ON lr.course_id = c.course_id
         JOIN users u ON lr.student_id = u.id_number
         JOIN course_teachers ct ON c.course_code = ct.course_code AND c.section = ct.section
-        WHERE ct.teacher_id = ? AND lr.status = 'รอการอนุมัติ'
+        LEFT JOIN leave_attachments la_leave ON lr.id = la_leave.leave_request_id AND la_leave.file_type = 'ใบลา'
+        LEFT JOIN leave_attachments la_medical ON lr.id = la_medical.leave_request_id AND la_medical.file_type = 'ใบรับรองแพทย์'
+        WHERE ct.teacher_id = ? AND lr.status = 'รออนุมัติ'
         ORDER BY lr.created_at DESC
       `, [teacherId]);
-      
-      console.log(`Fetched ${pendingRequests.length} pending requests for teacher ${teacherId}`);
+      console.log('Pending requests:', pendingRequests);
       res.json(pendingRequests);
     } catch (error) {
       console.error('Error fetching pending leave requests:', error);
@@ -1255,29 +1379,34 @@ router.get('/api/pending-leave-requests/:teacherId', ifNotLoggedIn, async (req, 
     }
   });
   
-  router.post('/api/approve-leave-request/:leaveRequestId', ifNotLoggedIn, async (req, res) => {
-    const { leaveRequestId } = req.params;
-    const { status, comment } = req.body;
-    
-    if (!leaveRequestId || !status) {
-      return res.status(400).json({ error: 'Leave request ID and status are required' });
+// API สำหรับอนุมัติหรือปฏิเสธใบลา
+router.post('/api/approve-leave-request/:leaveRequestId', ifNotLoggedIn, [
+    body('status').isIn(['อนุมัติ', 'ปฏิเสธ']).withMessage('Invalid status'),
+    body('comment').optional(),
+    body('approver_id').notEmpty().withMessage('Approver ID is required'),
+  ], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
+  
+    const { leaveRequestId } = req.params;
+    const { status, comment, approver_id } = req.body;
     
     try {
       const [result] = await dbConnection.execute(
         'UPDATE leave_requests SET status = ?, approval_comment = ?, approver_id = ?, approval_date = NOW() WHERE id = ?',
-        [status, comment, req.session.userID, leaveRequestId]
+        [status, comment, approver_id, leaveRequestId]
       );
       
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: 'Leave request not found or already processed' });
       }
       
-      console.log(`Leave request ${leaveRequestId} approved by teacher ${req.session.userID}`);
       res.json({ success: true, message: 'Leave request processed successfully' });
     } catch (error) {
       console.error('Error approving leave request:', error);
-      res.status(500).json({ error: 'Internal Server Error', details: error.message });
+      res.status(500).json({ error: 'Internal Server Error' });
     }
   });
 
@@ -1321,4 +1450,29 @@ router.get('/api/pending-leave-requests/:teacherId', ifNotLoggedIn, async (req, 
       res.status(500).json({ error: 'Internal Server Error', details: error.message });
     }
   });
+
+// API สำหรับดึงประวัติการลาของนักศึกษา
+router.get('/api/leave-history/:studentId', ifNotLoggedIn, async (req, res) => {
+    const { studentId } = req.params;
+    try {
+      const [leaveHistory] = await dbConnection.execute(`
+        SELECT lr.id, lr.start_date, lr.end_date, lr.reason, lr.status,
+               lt.type_name AS leave_type, c.course_name, c.course_code, c.section,
+               CONCAT(u.first_name, ' ', u.last_name) AS approver_name
+        FROM leave_requests lr
+        JOIN leave_types lt ON lr.leave_type_id = lt.id
+        JOIN courses c ON lr.course_id = c.id
+        LEFT JOIN users u ON lr.approver_id = u.id_number
+        WHERE lr.student_id = ?
+        ORDER BY lr.created_at DESC
+      `, [studentId]);
+      
+      res.json(leaveHistory);
+    } catch (error) {
+      console.error('Error fetching leave history:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+
 module.exports = router;
