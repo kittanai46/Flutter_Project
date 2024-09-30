@@ -191,22 +191,6 @@ class APIConstants {
     }
   }
 
-  static Future<String> uploadFile(String filePath, String fileType) async {
-    var request = http.MultipartRequest('POST', Uri.parse('$baseURL/upload'));
-    request.files.add(await http.MultipartFile.fromPath('file', filePath));
-    request.fields['fileType'] = fileType;
-
-    var streamedResponse = await request.send();
-    var response = await http.Response.fromStream(streamedResponse);
-
-    if (response.statusCode == 200) {
-      var responseData = jsonDecode(response.body);
-      return responseData['fileUrl']; // Assuming server returns the file URL
-    } else {
-      throw Exception('Failed to upload file: ${response.statusCode}');
-    }
-  }
-
   static Future<Map<String, dynamic>> submitLeaveRequest(
       Map<String, dynamic> leaveData,
       List<http.MultipartFile> attachments) async {
@@ -268,8 +252,9 @@ class APIConstants {
             'start_date': request['start_date'] ?? '',
             'end_date': request['end_date'] ?? '',
             'reason': request['reason'] ?? '',
-            'leave_document_url': request['leave_document_url'],
-            'medical_certificate_url': request['medical_certificate_url'],
+            'has_leave_document': request['has_leave_document'] ?? false,
+            'has_medical_certificate':
+                request['has_medical_certificate'] ?? false,
             'student_id': request['student_id'] ?? '',
           };
         }).toList();

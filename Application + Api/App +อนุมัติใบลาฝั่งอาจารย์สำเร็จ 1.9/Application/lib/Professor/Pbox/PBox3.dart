@@ -1,6 +1,11 @@
+import 'dart:io';
+
 import 'package:ClassTracking/api_constants.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
 
 class PBox3 extends StatefulWidget {
   final String teacherId;
@@ -127,20 +132,15 @@ class _PBox3State extends State<PBox3> {
                 Text(
                     'วันที่สิ้นสุด: ${DateFormat('dd/MM/yyyy').format(DateTime.parse(leaveRequest['end_date']))}'),
                 Text('เหตุผล: ${leaveRequest['reason']}'),
-                if (leaveRequest['leave_document_url'] != null)
-                  TextButton(
-                    child: Text('ดูเอกสารใบลา'),
-                    onPressed: () {
-                      _viewDocument(leaveRequest['leave_document_url']);
-                    },
-                  ),
-                if (leaveRequest['medical_certificate_url'] != null)
-                  TextButton(
-                    child: Text('ดูใบรับรองแพทย์'),
-                    onPressed: () {
-                      _viewDocument(leaveRequest['medical_certificate_url']);
-                    },
-                  ),
+                SizedBox(height: 15),
+                ElevatedButton(
+                  child: Text('ดูเอกสารใบลา'),
+                  onPressed: () => _viewDocument(leaveRequest['id'], 'leave'),
+                ),
+                ElevatedButton(
+                  child: Text('ดูใบรับรองแพทย์'),
+                  onPressed: () => _viewDocument(leaveRequest['id'], 'medical'),
+                ),
               ],
             ),
           ),
@@ -157,15 +157,66 @@ class _PBox3State extends State<PBox3> {
     );
   }
 
-  void _viewDocument(String documentUrl) {
-    // TODO: Implement document viewing logic
-    print('Viewing document: $documentUrl');
-    // This could open a web view or download and open the document
+  Future<void> _viewDocument(String leaveRequestId, String documentType) async {
+    try {
+      final url = Uri.parse(
+          '${APIConstants.baseURL}/download/$documentType/$leaveRequestId');
+      print('Downloading document from: $url');
+
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final bytes = response.bodyBytes;
+        if (bytes.isEmpty) {
+          throw Exception('ไม่พบไฟล์เอกสาร');
+        }
+        final tempDir = await getTemporaryDirectory();
+        final file =
+            File('${tempDir.path}/${documentType}_$leaveRequestId.pdf');
+        await file.writeAsBytes(bytes);
+
+        final result = await OpenFile.open(file.path);
+        if (result.type != ResultType.done) {
+          throw Exception('ไม่สามารถเปิดไฟล์ได้');
+        }
+      } else if (response.statusCode == 404) {
+        _showNoFileDialog(documentType);
+      } else {
+        throw Exception('เกิดข้อผิดพลาดในการดาวน์โหลดไฟล์');
+      }
+    } catch (e) {
+      print('Error viewing document: $e');
+      if (e.toString().contains('ไม่พบไฟล์เอกสาร')) {
+        _showNoFileDialog(documentType);
+      } else {
+        _showErrorSnackBar(e.toString());
+      }
+    }
+  }
+
+  void _showNoFileDialog(String documentType) {
+    String documentName = documentType == 'leave' ? 'ใบลา' : 'ใบรับรองแพทย์';
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('ไม่พบไฟล์'),
+          content: Text('นิสิตไม่ได้แนบไฟล์$documentNameมาด้วย'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('ตกลง'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: Colors.black),
     );
   }
 
