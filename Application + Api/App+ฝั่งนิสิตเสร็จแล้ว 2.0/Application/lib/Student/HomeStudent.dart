@@ -254,9 +254,9 @@ class _HomeStudentState extends State<HomeStudent> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Major: $major'),
-            Text('Minor: $minor'),
+            Text('รหัสวิชา: $major$minor'),
             Text('วันและเวลาที่พบ: $formattedDateTime'),
+            Text('## เลขตัวสุดท้ายของรหัสวิชา คือ เซคที่เรียน ##'),
           ],
         ),
         actions: [

@@ -65,19 +65,18 @@ class _SBox2State extends State<SBox2> {
                   padding: EdgeInsets.all(10),
                   child: SingleChildScrollView(
                     child: Text(
-                      message['message'] ??
-                          'ข้อความทดสอบการแจ้งเตือนผ่านสารจากระบบ',
+                      message['message'] ?? 'ไม่มีข้อมูล',
                       style: TextStyle(fontSize: 16),
                     ),
                   ),
                 ),
                 SizedBox(height: 16),
                 Text(
-                  'วิชา: ${message['course_code'] ?? '226482'} - ${message['course_name'] ?? 'ภาษาไทย'}',
+                  'วิชา: ${message['course_code'] ?? 'ไม่มีข้อมูล'} - ${message['course_name'] ?? 'ไม่มีข้อมูล'}',
                   style: TextStyle(fontSize: 14),
                 ),
                 Text(
-                  'อาจารย์: ${message['teacher_name'] ?? 'Makk Noy'}',
+                  'อาจารย์: ${message['teacher_name'] ?? 'ไม่มีข้อมูล'}',
                   style: TextStyle(fontSize: 14),
                 ),
                 Text(

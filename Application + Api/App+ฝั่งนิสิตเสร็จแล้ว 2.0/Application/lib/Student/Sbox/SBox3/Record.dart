@@ -1,8 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:ClassTracking/api_constants.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
 
 class Record extends StatefulWidget {
   final String studentId;
@@ -55,14 +59,134 @@ class _RecordState extends State<Record> {
   String getStatusColor(String status) {
     switch (status.toLowerCase()) {
       case 'อนุมัติ':
-        return '#4CAF50'; // สีเขียว
+        return '#4CAF50';
       case 'ไม่อนุมัติ':
-        return '#F44336'; // สีแดง
+        return '#F44336';
       case 'รออนุมัติ':
-        return '#FFC107'; // สีเหลือง
+        return '#FFC107';
       default:
-        return '#9E9E9E'; // สีเทา
+        return '#9E9E9E';
     }
+  }
+
+  String formatDate(String? dateString) {
+    if (dateString == null) return 'รอการตอบกลับ..';
+    try {
+      final date = DateTime.parse(dateString);
+      return DateFormat('dd/MM/yyyy').format(date);
+    } catch (e) {
+      return dateString;
+    }
+  }
+
+  void showLeaveDetails(Map<String, dynamic> leave) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('รายละเอียดใบลา'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text(
+                    'วิชา: ${leave['course_name']} (${leave['course_code']})[${leave['section'] ?? 'N/A'}]'),
+                Text('ประเภท: ${leave['leave_type']}'),
+                Text(
+                    'วันที่: ${formatDate(leave['start_date'])} - ${formatDate(leave['end_date'])}'),
+                Text('เหตุผล: ${leave['reason']}'),
+                Text(
+                    'วันที่ดำเนินการ: ${formatDate(leave['approval_date'] ?? leave['action_date'])}'),
+                Text('สถานะ: ${leave['action'] ?? 'รออนุมัติ'}'),
+                Text('ความคิดเห็น: ${leave['comment'] ?? 'ไม่มีความคิดเห็น'}'),
+                SizedBox(height: 20),
+                ElevatedButton(
+                  child: Text('ดูเอกสารใบลา'),
+                  onPressed: () =>
+                      _viewDocument(leave['id'].toString(), 'leave'),
+                ),
+                SizedBox(height: 10),
+                ElevatedButton(
+                  child: Text('ดูใบรับรองแพทย์'),
+                  onPressed: () =>
+                      _viewDocument(leave['id'].toString(), 'medical'),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('ปิด'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _viewDocument(String leaveRequestId, String documentType) async {
+    try {
+      final url = Uri.parse(
+          '${APIConstants.baseURL}/download/$documentType/$leaveRequestId');
+      print('Downloading document from: $url');
+
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final bytes = response.bodyBytes;
+        if (bytes.isEmpty) {
+          throw Exception('ไม่พบไฟล์เอกสาร');
+        }
+        final tempDir = await getTemporaryDirectory();
+        final file =
+            File('${tempDir.path}/${documentType}_$leaveRequestId.pdf');
+        await file.writeAsBytes(bytes);
+
+        final result = await OpenFile.open(file.path);
+        if (result.type != ResultType.done) {
+          throw Exception('ไม่สามารถเปิดไฟล์ได้');
+        }
+      } else if (response.statusCode == 404) {
+        _showNoFileDialog(documentType);
+      } else {
+        throw Exception('เกิดข้อผิดพลาดในการดาวน์โหลดไฟล์');
+      }
+    } catch (e) {
+      print('Error viewing document: $e');
+      if (e.toString().contains('ไม่พบไฟล์เอกสาร')) {
+        _showNoFileDialog(documentType);
+      } else {
+        _showErrorSnackBar(e.toString());
+      }
+    }
+  }
+
+  void _showNoFileDialog(String documentType) {
+    String documentName = documentType == 'leave' ? 'ใบลา' : 'ใบรับรองแพทย์';
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('ไม่พบไฟล์'),
+          content: Text('ไม่พบไฟล์$documentName'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('ตกลง'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
   }
 
   @override
@@ -70,7 +194,7 @@ class _RecordState extends State<Record> {
     return Scaffold(
       body: Stack(
         children: [
-          // ภาพพื้นหลัง
+          // Background image
           Positioned(
             top: -10,
             left: 0,
@@ -83,7 +207,7 @@ class _RecordState extends State<Record> {
               ),
             ),
           ),
-          // ปุ่มย้อนกลับ
+          // Back button
           Positioned(
             top: 40,
             left: 20,
@@ -96,7 +220,7 @@ class _RecordState extends State<Record> {
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          // ไอคอนด้านขวา
+          // Right icon
           Positioned(
             top: 80,
             right: 20,
@@ -106,7 +230,7 @@ class _RecordState extends State<Record> {
               height: 50,
             ),
           ),
-          // ข้อความกลางหน้าจอ
+          // Title
           Positioned(
             top: 80,
             left: 0,
@@ -124,7 +248,7 @@ class _RecordState extends State<Record> {
               ),
             ),
           ),
-          // รายการประวัติการลา
+          // Leave history list
           Positioned(
             top: 150,
             left: 0,
@@ -141,43 +265,51 @@ class _RecordState extends State<Record> {
                           return Card(
                             margin: EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 8),
-                            child: Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${leave['course_name']} (${leave['course_code']})',
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16),
-                                  ),
-                                  SizedBox(height: 8),
-                                  Text('ประเภท: ${leave['leave_type']}'),
-                                  Text(
-                                      'วันที่: ${leave['start_date']} - ${leave['end_date']}'),
-                                  Text('เหตุผล: ${leave['reason']}'),
-                                  Text(
-                                      'สถานะ: ${leave['action'] ?? 'รออนุมัติ'}'),
-                                  if (leave['comment'] != null &&
-                                      leave['comment'].isNotEmpty)
-                                    Text('ความคิดเห็น: ${leave['comment']}'),
-                                  SizedBox(height: 8),
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Color(int.parse(getStatusColor(
-                                              leave['action'] ?? 'รออนุมัติ')
-                                          .replaceAll('#', '0xFF'))),
-                                      borderRadius: BorderRadius.circular(4),
+                            child: InkWell(
+                              onTap: () => showLeaveDetails(leave),
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${leave['course_name'] ?? 'N/A'} ${leave['course_code'] ?? 'N/A'}[${leave['section'] ?? 'N/A'}]',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16),
                                     ),
-                                    child: Text(
-                                      leave['action'] ?? 'รออนุมัติ',
-                                      style: TextStyle(color: Colors.white),
+                                    SizedBox(height: 8),
+                                    Text(
+                                        'ประเภท: ${leave['leave_type'] ?? 'N/A'}'),
+                                    Text(
+                                        'วันที่: ${formatDate(leave['start_date'])} - ${formatDate(leave['end_date'])}'),
+                                    Text('เหตุผล: ${leave['reason'] ?? 'N/A'}'),
+                                    Text(
+                                        'วันที่ดำเนินการ: ${formatDate(leave['approval_date'] ?? leave['action_date'])}'),
+                                    if (leave['comment'] != null)
+                                      Text('ความคิดเห็น: ${leave['comment']}'),
+                                    SizedBox(height: 8),
+                                    Align(
+                                      alignment: Alignment.bottomRight,
+                                      child: Container(
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Color(int.parse(getStatusColor(
+                                                  leave['action'] ??
+                                                      'รออนุมัติ')
+                                              .replaceAll('#', '0xFF'))),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          leave['action'] ?? 'รออนุมัติ',
+                                          style: TextStyle(color: Colors.white),
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           );

@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as path;
 
 class SBox3 extends StatefulWidget {
   final String studentId;
@@ -28,6 +29,8 @@ class _SBox3State extends State<SBox3> {
   List<Map<String, dynamic>> _leaveTypes = [];
   bool _isLoading = false;
   String? _errorMessage;
+  String? _leaveDocumentName;
+  String? _medicalCertificateName;
 
   @override
   void initState() {
@@ -39,6 +42,8 @@ class _SBox3State extends State<SBox3> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _selectedCourse = null;
+      _selectedLeaveType = null;
     });
     try {
       await Future.wait([
@@ -66,11 +71,9 @@ class _SBox3State extends State<SBox3> {
           };
         }).toList();
       });
-      print('Fetched courses: $_courses');
     } catch (e) {
       print('Error fetching student courses: $e');
-      _showErrorSnackBar('เกิดข้อผิดพลาดในการโหลดข้อมูลรายวิชา: $e');
-      rethrow;
+      throw Exception('เกิดข้อผิดพลาดในการโหลดข้อมูลรายวิชา: $e');
     }
   }
 
@@ -82,8 +85,7 @@ class _SBox3State extends State<SBox3> {
       });
     } catch (e) {
       print('Error fetching leave types: $e');
-      _showErrorSnackBar('เกิดข้อผิดพลาดในการโหลดประเภทการลา: $e');
-      rethrow;
+      throw Exception('เกิดข้อผิดพลาดในการโหลดประเภทการลา: $e');
     }
   }
 
@@ -95,8 +97,8 @@ class _SBox3State extends State<SBox3> {
       context: context,
       initialDate: isStartDate
           ? _startDate ?? DateTime.now()
-          : _endDate ?? DateTime.now(),
-      firstDate: DateTime.now(),
+          : _endDate ?? (_startDate ?? DateTime.now()),
+      firstDate: isStartDate ? DateTime.now() : (_startDate ?? DateTime.now()),
       lastDate: DateTime.now().add(Duration(days: 365)),
       locale: const Locale('th', 'TH'),
       builder: (BuildContext context, Widget? child) {
@@ -123,6 +125,9 @@ class _SBox3State extends State<SBox3> {
       setState(() {
         if (isStartDate) {
           _startDate = picked;
+          if (_endDate != null && _endDate!.isBefore(_startDate!)) {
+            _endDate = null;
+          }
         } else {
           _endDate = picked;
         }
@@ -130,17 +135,32 @@ class _SBox3State extends State<SBox3> {
     }
   }
 
+  bool _isPDF(File file) {
+    String extension = path.extension(file.path).toLowerCase();
+    return extension == '.pdf';
+  }
+
   Future<void> _pickFile(bool isLeaveDocument) async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles();
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
       if (result != null && result.files.single.path != null) {
-        setState(() {
-          if (isLeaveDocument) {
-            _leaveDocument = File(result.files.single.path!);
-          } else {
-            _medicalCertificate = File(result.files.single.path!);
-          }
-        });
+        File file = File(result.files.single.path!);
+        if (_isPDF(file)) {
+          setState(() {
+            if (isLeaveDocument) {
+              _leaveDocument = file;
+              _leaveDocumentName = path.basename(file.path);
+            } else {
+              _medicalCertificate = file;
+              _medicalCertificateName = path.basename(file.path);
+            }
+          });
+        } else {
+          _showErrorSnackBar('ไม่สามารถแนปไฟล์อื่นนอกจาก PDF ได้');
+        }
       } else {
         print('ไม่มีไฟล์ถูกเลือก');
       }
@@ -150,8 +170,87 @@ class _SBox3State extends State<SBox3> {
     }
   }
 
+  void _removeFile(bool isLeaveDocument) {
+    setState(() {
+      if (isLeaveDocument) {
+        _leaveDocument = null;
+        _leaveDocumentName = null;
+      } else {
+        _medicalCertificate = null;
+        _medicalCertificateName = null;
+      }
+    });
+  }
+
+  Widget _buildFileSelectionWidget(bool isLeaveDocument) {
+    String buttonText =
+        isLeaveDocument ? 'แนบใบลา' : 'แนบใบรับรองแพทย์ (ถ้ามี)';
+    String? fileName =
+        isLeaveDocument ? _leaveDocumentName : _medicalCertificateName;
+    Color buttonColor = Color.fromRGBO(242, 176, 255, 1); // สีชมพูอ่อน
+
+    return Row(
+      children: [
+        Container(
+          width: 195, // กำหนดความกว้างของปุ่ม
+          height: 35,
+          child: ElevatedButton(
+            onPressed: () => _pickFile(isLeaveDocument),
+            child: Text(
+              buttonText,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.black,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: buttonColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ),
+        SizedBox(width: 10), // ระยะห่างระหว่างปุ่มและชื่อไฟล์
+        if (fileName != null)
+          Container(
+            width: 170, // กำหนดความกว้างเท่ากับปุ่ม
+            height: 35,
+            padding: EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    fileName,
+                    style: TextStyle(fontSize: 13),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.delete, color: Colors.grey, size: 20),
+                  onPressed: () => _removeFile(isLeaveDocument),
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   Future<void> _submitLeaveRequest() async {
     if (_formKey.currentState!.validate()) {
+      if (_leaveDocument == null) {
+        _showErrorSnackBar('กรุณาแนบไฟล์ใบลา');
+        return;
+      }
       setState(() => _isLoading = true);
       try {
         List<http.MultipartFile> attachments = [];
@@ -183,6 +282,7 @@ class _SBox3State extends State<SBox3> {
 
         if (result['success'] == true) {
           _showSuccessSnackBar('ส่งคำขอลาเรียนสำเร็จ');
+          _resetForm();
           Navigator.pop(context);
         } else {
           throw Exception(result['error'] ?? 'Unknown error occurred');
@@ -194,6 +294,21 @@ class _SBox3State extends State<SBox3> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _resetForm() {
+    setState(() {
+      _selectedCourse = null;
+      _selectedLeaveType = null;
+      _startDate = null;
+      _endDate = null;
+      _reason = null;
+      _leaveDocument = null;
+      _medicalCertificate = null;
+      _leaveDocumentName = null;
+      _medicalCertificateName = null;
+    });
+    _formKey.currentState?.reset();
   }
 
   void _showErrorSnackBar(String message) {
@@ -380,37 +495,31 @@ class _SBox3State extends State<SBox3> {
                                     ? 'กรุณากรอกเหตุผลการลา'
                                     : null,
                               ),
+                              SizedBox(height: 30),
+                              _buildFileSelectionWidget(true),
                               SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: () => _pickFile(true),
-                                child: Text('แนบใบลา'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                ),
-                              ),
-                              if (_leaveDocument != null)
-                                Text(
-                                    'ไฟล์ที่แนบ: ${_leaveDocument?.path.split('/').last ?? 'ไม่มีไฟล์ที่เลือก'}'),
-                              SizedBox(height: 8),
-                              ElevatedButton(
-                                onPressed: () => _pickFile(false),
-                                child: Text('แนบใบรับรองแพทย์ (ถ้ามี)'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                ),
-                              ),
-                              if (_medicalCertificate != null)
-                                Text(
-                                    'ไฟล์ที่แนบ: ${_medicalCertificate?.path.split('/').last ?? 'ไม่มีไฟล์ที่เลือก'}'),
-                              SizedBox(height: 24),
+                              _buildFileSelectionWidget(false),
+                              SizedBox(height: 40),
                               Center(
-                                child: ElevatedButton(
-                                  onPressed: _submitLeaveRequest,
-                                  child: Text('ส่งใบลา'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.blue,
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 50, vertical: 15),
+                                child: Container(
+                                  width: 360,
+                                  height: 50,
+                                  child: ElevatedButton(
+                                    onPressed: _submitLeaveRequest,
+                                    child: Text(
+                                      'ส่งใบลา',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor:
+                                          Color.fromRGBO(233, 143, 255, 1),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),

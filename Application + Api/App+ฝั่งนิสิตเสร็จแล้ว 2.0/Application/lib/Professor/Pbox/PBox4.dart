@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-//ตรวจสอบคนเข้าเรียน
+//ส่งการประกาศข่าวสาร
 class PBox4 extends StatelessWidget {
   const PBox4({Key? key}) : super(key: key);
 
@@ -22,7 +22,6 @@ class PBox4 extends StatelessWidget {
               ),
             ),
           ),
-          // ปุ่มย้อนกลับ
           Positioned(
             top: 40,
             left: 20,
@@ -35,26 +34,24 @@ class PBox4 extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
             ),
           ),
-          // ไอคอนด้านขวา
           Positioned(
-            top: 80,
-            right: 20,
+            top: 70,
+            right: 40,
             child: Image.asset(
-              'assets/Images/icon03.png',
+              'assets/Images/icon04.png',
               width: 50,
               height: 50,
             ),
           ),
-          // ข้อความกลางหน้าจอ
-          Positioned(
+          const Positioned(
             top: 80,
             left: 0,
             right: 0,
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 10.0),
+                padding: EdgeInsets.only(bottom: 10.0),
                 child: Text(
-                  'ตรวจสอบการเข้าเรียน',
+                  'ส่งการประกาศข่าวสาร',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
