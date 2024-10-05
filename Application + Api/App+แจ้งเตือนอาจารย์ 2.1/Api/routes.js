@@ -1186,6 +1186,18 @@ router.get('/api/messages', async (req, res) => {
       console.error('Error sending notification:', error);
     }
   }
+  // ฟังก์ชันสำหรับส่งการแจ้งเตือน (ถ้าต้องการ)
+  async function sendNotification(course_code, section, title, message) {
+    try {
+      const recipientId = `${course_code}-${section}`;
+      await dbConnection.execute(`
+        INSERT INTO notifications (recipient_id, title, message)
+        VALUES (?, ?, ?)
+      `, [recipientId, title, message]);
+    } catch (error) {
+      console.error('Error sending notification:', error);
+    }
+  }
 
 
 router.get('/api/student_messages/:studentId', async (req, res) => {
@@ -1542,30 +1554,7 @@ router.get('/api/leave-history/:studentId', async (req, res) => {
     }
   });
   
-  // Send course message
-  router.post('/api/course_messages', async (req, res) => {
-    const { teacher_id, course_code, section, title, message } = req.body;
-    
-    console.log('Received data:', { teacher_id, course_code, section, title, message });
   
-    try {
-      // ตรวจสอบว่ามีข้อมูลครบถ้วน
-      if (!teacher_id || !course_code || !section || !title || !message) {
-        return res.status(400).json({ success: false, error: 'Missing required fields' });
-      }
-  
-      // บันทึกข้อความลงในฐานข้อมูล
-      const [result] = await dbConnection.execute(`
-        INSERT INTO messages (teacher_id, course_code, section, title, message)
-        VALUES (?, ?, ?, ?, ?)
-      `, [teacher_id, course_code, section, title, message]);
-  
-      res.json({ success: true, message_id: result.insertId });
-    } catch (error) {
-      console.error('Error sending course message:', error);
-      res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-  });
 
   // เพิ่ม route สำหรับการส่งการแจ้งเตือน
   router.post('/api/notifications/send', async (req, res) => {
